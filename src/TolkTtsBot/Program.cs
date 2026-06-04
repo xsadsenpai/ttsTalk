@@ -40,9 +40,15 @@ try
         client.DefaultRequestHeaders.Add("X-Platform", "web");
     });
 
-    builder.Services.AddSingleton<IBrowserService, PlaywrightBrowserService>();
+    // Выбираем реализацию браузера на основе конфига
+    var browserOpts = builder.Configuration.GetSection(BrowserOptions.Section).Get<BrowserOptions>() ?? new();
+    if (browserOpts.UseBrowser)
+        builder.Services.AddSingleton<IBrowserService, PlaywrightBrowserService>();
+    else
+        builder.Services.AddSingleton<IBrowserService, NullBrowserService>();
     builder.Services.AddSingleton<TolkChatService>();
     builder.Services.AddSingleton<BotOrchestrator>();
+    builder.Services.AddHttpClient();  // базовый IHttpClientFactory для диагностики
     builder.Services.AddControllers();
     builder.Services.AddSignalR();
     builder.Services.AddCors(o => o.AddDefaultPolicy(p =>

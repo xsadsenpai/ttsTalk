@@ -230,9 +230,17 @@ public sealed class BotOrchestrator : IAsyncDisposable
             {
                 _log.LogInformation("Озвучиваю: {P}", item.Phrase[..Math.Min(100, item.Phrase.Length)]);
                 var wav = await _tts.SynthesizeAsync(item.Phrase, ct);
-                await _browser.InjectAudioAsync(wav, ct);
+                if (_browser.IsInRoom)
+                {
+                    await _browser.InjectAudioAsync(wav, ct);
+                    PushLog("Info", $"🔊 [{item.Sender}]: {item.OriginalText[..Math.Min(50, item.OriginalText.Length)]}");
+                }
+                else
+                {
+                    // Браузер не в комнате — синтез выполнен, но аудио не воспроизведено
+                    PushLog("Info", $"✓ [{item.Sender}] (синтез OK, аудио недоступно): {item.OriginalText[..Math.Min(50, item.OriginalText.Length)]}");
+                }
                 State.MessagesSpoken++;
-                PushLog("Info", $"✓ [{item.Sender}]: {item.OriginalText[..Math.Min(50, item.OriginalText.Length)]}");
                 await PushStatusAsync();
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }

@@ -33,6 +33,8 @@ public sealed class BrowserOptions
     public int  SlowMo              { get; init; } = 0;
     public int  NavigationTimeoutMs { get; init; } = 20000;
     public int  JoinTimeoutSeconds  { get; init; } = 40;
+    /// <summary>false = использовать NullBrowserService (только чат, без аудио)</summary>
+    public bool UseBrowser          { get; init; } = true;
 }
 
 // ── Состояние бота ────────────────────────────────────────────────────────────
