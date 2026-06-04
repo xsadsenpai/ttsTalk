@@ -79,6 +79,11 @@ public sealed class PlaywrightBrowserService : IBrowserService
                     "--disable-gpu",
                     "--single-process",
                     "--no-first-run",
+                    "--ignore-certificate-errors",
+                    "--disable-web-security",
+                    "--disable-features=VizDisplayCompositor",
+                    "--disable-background-timer-throttling",
+                    "--disable-renderer-backgrounding",
                 }
             });
             Log("[Browser] ✓ Chromium запущен");
@@ -95,14 +100,26 @@ public sealed class PlaywrightBrowserService : IBrowserService
             _page.Console  += (_, e) => _log.LogDebug("[Page] {T}: {M}", e.Type, e.Text);
             _page.PageError += (_, e) => _log.LogWarning("[Page] Error: {E}", e);
 
-            // ── Открываем страницу (Load, не NetworkIdle — SPA никогда не достигает NetworkIdle) ──
-            Log($"[Browser] Открываем: {{U}}" + " " + roomUrl);
+            // ── Диагностика сети ─────────────────────────────────────────
+            try
+            {
+                var netTest = await _page.GotoAsync("https://kontur.ktalk.ru",
+                    new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 15000 });
+                Log($"[Browser] Сеть OK: kontur.ktalk.ru HTTP {netTest?.Status}");
+            }
+            catch (Exception netEx)
+            {
+                Log($"[Browser] Сеть НЕДОСТУПНА из контейнера: {netEx.Message[..Math.Min(netEx.Message.Length, 100)]}");
+            }
+
+            // ── Открываем комнату (DOMContentLoaded — быстрее чем Load) ──
+            Log($"[Browser] Открываем: {roomUrl}");
             var response = await _page.GotoAsync(roomUrl, new PageGotoOptions
             {
-                WaitUntil = WaitUntilState.Load,
-                Timeout   = _opts.NavigationTimeoutMs
+                WaitUntil = WaitUntilState.DOMContentLoaded,
+                Timeout   = 60000
             });
-            Log($"[Browser] HTTP {{S}}" + " " + response?.Status);
+            Log($"[Browser] HTTP {response?.Status}");
 
             // Ждём рендера Angular/React
             await Task.Delay(3000, token);
@@ -114,8 +131,8 @@ public sealed class PlaywrightBrowserService : IBrowserService
                 "()=>[...document.querySelectorAll('input')].map(i=>`${i.type}|${i.name}|${i.placeholder}`)");
             var buttons = await _page.EvaluateAsync<string[]>(
                 "()=>[...document.querySelectorAll('button')].map(b=>b.innerText.trim()).filter(Boolean)");
-            Log($"[Browser] Title={{T}}" + " " + title);
-            Log($"[Browser] Body={{B}}" + " " + body);
+            Log($"[Browser] Title={title}");
+            Log($"[Browser] Body={body[..Math.Min(body.Length, 150)]}");
             Log($"[Browser] Inputs: {string.Join("; ", inputs ?? [])}");
             Log($"[Browser] Buttons: {string.Join("; ", buttons ?? [])}");
 
