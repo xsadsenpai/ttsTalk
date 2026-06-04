@@ -6,7 +6,8 @@ namespace TolkTtsBot.Services;
 
 public interface IBrowserService : IAsyncDisposable
 {
-    Task<bool> JoinRoomAsync(string roomUrl, string botName, CancellationToken ct);
+    Task<bool> JoinRoomAsync(string roomUrl, string botName, CancellationToken ct,
+        Action<string>? onLog = null);
     Task InjectAudioAsync(byte[] wavBytes, CancellationToken ct);
     Task LeaveRoomAsync();
     bool IsInRoom { get; }
@@ -22,8 +23,15 @@ public sealed class PlaywrightBrowserService : IBrowserService
     private IBrowserContext? _context;
     private IPage?           _page;
     private bool             _isInRoom;
+    private Action<string>?  _onLog;
 
     public bool IsInRoom => _isInRoom;
+
+    private void Log(string msg)
+    {
+        _log.LogInformation("{M}", msg);
+        _onLog?.Invoke(msg);
+    }
 
     public PlaywrightBrowserService(
         IOptions<BrowserOptions> opts,
@@ -35,9 +43,11 @@ public sealed class PlaywrightBrowserService : IBrowserService
 
     // ── Вход в комнату ────────────────────────────────────────────────────────
 
-    public async Task<bool> JoinRoomAsync(string roomUrl, string botName, CancellationToken ct)
+    public async Task<bool> JoinRoomAsync(string roomUrl, string botName, CancellationToken ct,
+        Action<string>? onLog = null)
     {
         // Жёсткий таймаут на весь процесс входа
+        _onLog = onLog;
         using var joinCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         joinCts.CancelAfter(TimeSpan.FromSeconds(_opts.JoinTimeoutSeconds));
         var token = joinCts.Token;
@@ -46,11 +56,11 @@ public sealed class PlaywrightBrowserService : IBrowserService
         {
             await CleanupAsync();
 
-            _log.LogInformation("[Browser] Инициализация Playwright...");
+            Log("[Browser] Инициализация Playwright...");
             _playwright = await Playwright.CreateAsync();
 
             var chromium = FindChromium();
-            _log.LogInformation("[Browser] Chromium: {C}", chromium ?? "(встроенный)");
+            Log($"[Browser] Chromium: {chromium ?? "(встроенный)"}");
 
             _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
@@ -71,7 +81,7 @@ public sealed class PlaywrightBrowserService : IBrowserService
                     "--no-first-run",
                 }
             });
-            _log.LogInformation("[Browser] ✓ Chromium запущен");
+            Log("[Browser] ✓ Chromium запущен");
 
             _context = await _browser.NewContextAsync(new BrowserNewContextOptions
             {
@@ -86,13 +96,13 @@ public sealed class PlaywrightBrowserService : IBrowserService
             _page.PageError += (_, e) => _log.LogWarning("[Page] Error: {E}", e);
 
             // ── Открываем страницу (Load, не NetworkIdle — SPA никогда не достигает NetworkIdle) ──
-            _log.LogInformation("[Browser] Открываем: {U}", roomUrl);
+            Log($"[Browser] Открываем: {{U}}" + " " + roomUrl);
             var response = await _page.GotoAsync(roomUrl, new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.Load,
                 Timeout   = _opts.NavigationTimeoutMs
             });
-            _log.LogInformation("[Browser] HTTP {S}", response?.Status);
+            Log($"[Browser] HTTP {{S}}" + " " + response?.Status);
 
             // Ждём рендера Angular/React
             await Task.Delay(3000, token);
@@ -104,10 +114,10 @@ public sealed class PlaywrightBrowserService : IBrowserService
                 "()=>[...document.querySelectorAll('input')].map(i=>`${i.type}|${i.name}|${i.placeholder}`)");
             var buttons = await _page.EvaluateAsync<string[]>(
                 "()=>[...document.querySelectorAll('button')].map(b=>b.innerText.trim()).filter(Boolean)");
-            _log.LogInformation("[Browser] Title={T}", title);
-            _log.LogInformation("[Browser] Body={B}", body);
-            _log.LogInformation("[Browser] Inputs: {I}",  string.Join("; ", inputs  ?? []));
-            _log.LogInformation("[Browser] Buttons: {B}", string.Join("; ", buttons ?? []));
+            Log($"[Browser] Title={{T}}" + " " + title);
+            Log($"[Browser] Body={{B}}" + " " + body);
+            Log($"[Browser] Inputs: {string.Join("; ", inputs ?? [])}");
+            Log($"[Browser] Buttons: {string.Join("; ", buttons ?? [])}");
 
             // ── Гостевой вход ─────────────────────────────────────────────
             await GuestJoinAsync(botName, token);
@@ -116,19 +126,19 @@ public sealed class PlaywrightBrowserService : IBrowserService
             await SetupAudioAsync();
 
             _isInRoom = true;
-            _log.LogInformation("[Browser] ✓ Бот в комнате как \"{N}\"", botName);
+            Log($"[Browser] ✓ Бот в комнате как \"{botName}\"");
             return true;
         }
         catch (OperationCanceledException)
         {
-            _log.LogWarning("[Browser] Таймаут входа ({T}с)", _opts.JoinTimeoutSeconds);
+            Log($"[Browser] ⚠ Таймаут входа ({_opts.JoinTimeoutSeconds}с)");
             await CleanupAsync();
             return false;
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "[Browser] Ошибка: {M}", ex.Message);
-            try { if (_page is not null) _log.LogError("[Browser] URL={U}", _page.Url); } catch { }
+            Log($"[Browser] ✗ Ошибка: {ex.Message}"); _log.LogError(ex, "[Browser] Error");
+            try { if (_page is not null) Log($"[Browser] URL при ошибке: {_page.Url}"); } catch { }
             await CleanupAsync();
             return false;
         }
@@ -150,7 +160,7 @@ public sealed class PlaywrightBrowserService : IBrowserService
     private async Task GuestJoinAsync(string botName, CancellationToken ct)
     {
         if (_page is null) return;
-        _log.LogInformation("[Join] Вход как \"{N}\"", botName);
+        Log($"[Join] Вход как \"{botName}\"");
 
         await Task.Delay(1000, ct);
 
@@ -178,7 +188,7 @@ public sealed class PlaywrightBrowserService : IBrowserService
                     await loc.FillAsync(botName);
                     await loc.PressAsync("Tab");
                     await Task.Delay(300, ct);
-                    _log.LogInformation("[Join] ✓ Имя введено [{S}]", sel);
+                    Log($"[Join] ✓ Имя введено [{sel}]");
                     break;
                 }
             }
@@ -207,7 +217,7 @@ public sealed class PlaywrightBrowserService : IBrowserService
                 {
                     var txt = await btn.InnerTextAsync();
                     await btn.ClickAsync();
-                    _log.LogInformation("[Join] ✓ Кнопка \"{T}\" нажата", txt.Trim());
+                    Log($"[Join] ✓ Кнопка \"{txt.Trim()}\" нажата");
                     break;
                 }
             }
@@ -220,8 +230,8 @@ public sealed class PlaywrightBrowserService : IBrowserService
         var urlAfter  = _page.Url;
         var bodyAfter = await _page.EvaluateAsync<string>(
             "()=>document.body?.innerText?.slice(0,200)??''");
-        _log.LogInformation("[Join] URL после входа: {U}", urlAfter);
-        _log.LogInformation("[Join] Body после входа: {B}", bodyAfter);
+        Log($"[Join] URL после входа: {urlAfter}");
+        Log($"[Join] Body после входа: {bodyAfter}");
 
         // Проверяем и включаем микрофон
         await EnsureMicOnAsync(ct);
@@ -230,7 +240,7 @@ public sealed class PlaywrightBrowserService : IBrowserService
     private async Task EnsureMicOnAsync(CancellationToken ct)
     {
         if (_page is null) return;
-        _log.LogInformation("[Mic] Проверка...");
+        Log("[Mic] Проверка...");
 
         string[] micOffSelectors =
         [
@@ -249,13 +259,13 @@ public sealed class PlaywrightBrowserService : IBrowserService
                 if (await btn.IsVisibleAsync())
                 {
                     await btn.ClickAsync();
-                    _log.LogInformation("[Mic] ✓ Включён [{S}]", sel);
+                    Log($"[Mic] ✓ Включён [{sel}]");
                     return;
                 }
             }
             catch { }
         }
-        _log.LogInformation("[Mic] Уже включён или не найден");
+        Log("[Mic] Уже включён или не найден");
     }
 
     // ── Web Audio API injection ───────────────────────────────────────────────
@@ -263,7 +273,7 @@ public sealed class PlaywrightBrowserService : IBrowserService
     private async Task SetupAudioAsync()
     {
         if (_page is null) return;
-        _log.LogInformation("[Audio] Настройка Web Audio injection...");
+        Log("[Audio] Настройка Web Audio injection...");
 
         await _page.EvaluateAsync("""
             (function() {
@@ -304,7 +314,7 @@ public sealed class PlaywrightBrowserService : IBrowserService
             })();
         """);
 
-        _log.LogInformation("[Audio] ✓ Готов");
+        Log("[Audio] ✓ Готов");
     }
 
     public async Task InjectAudioAsync(byte[] wavBytes, CancellationToken ct)
@@ -325,7 +335,7 @@ public sealed class PlaywrightBrowserService : IBrowserService
     {
         _isInRoom = false;
         await CleanupAsync();
-        _log.LogInformation("[Browser] Закрыт");
+        Log("[Browser] Закрыт");
     }
 
     private async Task CleanupAsync()

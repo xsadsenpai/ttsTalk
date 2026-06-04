@@ -120,7 +120,9 @@ public sealed class BotOrchestrator : IAsyncDisposable
 
             // Браузер входит в комнату для WebRTC аудио
             PushLog("Info", "Открываю комнату в браузере...");
-            var joined = await _browser.JoinRoomAsync(roomUrl, _opts.Name, ct);
+            var joined = await _browser.JoinRoomAsync(
+                roomUrl, _opts.Name, ct,
+                onLog: msg => PushLog("Info", msg));
             if (!joined)
                 PushLog("Warning", "Браузер не вошёл в комнату — аудио недоступно, чат работает");
 
