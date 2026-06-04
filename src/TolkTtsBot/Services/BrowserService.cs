@@ -366,34 +366,4 @@ public sealed class PlaywrightBrowserService : IBrowserService
     }
 
     public async ValueTask DisposeAsync() => await CleanupAsync();
-
-/// <summary>
-/// Заглушка IBrowserService — используется когда Playwright/Chromium
-/// не может подключиться к комнате. Чат работает, аудио недоступно.
-/// </summary>
-public sealed class NullBrowserService : IBrowserService
-{
-    private readonly ILogger<NullBrowserService> _log;
-    public bool IsInRoom => false;
-
-    public NullBrowserService(ILogger<NullBrowserService> log) => _log = log;
-
-    public Task<bool> JoinRoomAsync(string roomUrl, string botName,
-        CancellationToken ct, Action<string>? onLog = null)
-    {
-        _log.LogWarning("[NullBrowser] Playwright отключён — аудио недоступно");
-        onLog?.Invoke("[Browser] Режим только чат — аудио через браузер отключено");
-        return Task.FromResult(false);
-    }
-
-    public Task InjectAudioAsync(byte[] wavBytes, CancellationToken ct)
-    {
-        _log.LogDebug("[NullBrowser] InjectAudio вызван, но браузер отключён");
-        return Task.CompletedTask;
-    }
-
-    public Task LeaveRoomAsync() => Task.CompletedTask;
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-}
-
 }
