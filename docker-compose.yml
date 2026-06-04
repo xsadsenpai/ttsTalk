@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  tolk-tts-bot:
+    build: .
+    ports:
+      - "10000:10000"
+    environment:
+      PORT: "10000"
+      BOT_NAME: "TTS Бот"
+      TTS_VOICE: xenia
+      ASPNETCORE_ENVIRONMENT: Development
+    volumes:
+      - silero-models:/app/models
+      - ./logs:/app/logs
+    restart: unless-stopped
+volumes:
+  silero-models:

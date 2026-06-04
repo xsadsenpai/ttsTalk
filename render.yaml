@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: ttstalk
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/bot/status
+    disk:
+      name: silero-models
+      mountPath: /app/models
+      sizeGB: 2
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: TTS_VOICE
+        value: xenia
+      - key: BOT_NAME
+        value: "TTS Бот"
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+    plan: standard

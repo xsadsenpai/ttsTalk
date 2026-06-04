@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Толк TTS Бот</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;
+  --accent:#5b6cf9;--text:#e8eaf0;--dim:#8b8fa8;
+  --green:#3ecf6a;--amber:#f5a623;--red:#f04444;
+  --blue:#4a9eff;--purple:#a78bfa;--mono:'JetBrains Mono',monospace;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--bg);color:var(--text);min-height:100vh;
+  display:grid;grid-template-rows:auto 1fr}
+header{border-bottom:1px solid var(--border);padding:14px 24px;
+  display:flex;align-items:center;gap:12px;background:var(--surface)}
+.logo{width:32px;height:32px;background:var(--accent);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;font-size:18px}
+header h1{font-size:17px;font-weight:600}
+#conn{margin-left:auto;font-size:12px;color:var(--dim)}
+.layout{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 57px);overflow:hidden}
+.sidebar{border-right:1px solid var(--border);display:flex;flex-direction:column;
+  gap:14px;overflow-y:auto;padding:18px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
+.card-title{font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--dim);margin-bottom:10px}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;
+  padding:4px 10px;border-radius:20px;background:var(--border);color:var(--dim)}
+.badge.running{background:#1a3a28;color:var(--green)}
+.badge.error{background:#3a1a1a;color:var(--red)}
+.badge.connecting,.badge.reconnecting{background:#2a2a0e;color:var(--amber)}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.dot.pulse{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.metric{background:var(--bg);border-radius:8px;padding:10px 12px}
+.metric-label{font-size:11px;color:var(--dim);margin-bottom:3px}
+.metric-value{font-size:20px;font-weight:600;font-family:var(--mono)}
+.cmd-badge{display:inline-block;background:#1e1a3a;border:1px solid #3d2fa0;
+  color:var(--purple);font-family:var(--mono);font-size:13px;font-weight:600;
+  padding:3px 10px;border-radius:6px}
+input[type=url]{width:100%;background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;padding:9px 12px;color:var(--text);font-size:14px;
+  outline:none;transition:border-color .15s;margin-bottom:10px}
+input[type=url]:focus{border-color:var(--accent)}
+input::placeholder{color:var(--dim)}
+.btn{width:100%;padding:9px;border-radius:8px;border:none;
+  font-size:14px;font-weight:500;cursor:pointer;transition:opacity .15s,transform .1s}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-start{background:var(--accent);color:#fff;margin-bottom:8px}
+.btn-stop{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-stop:hover:not(:disabled){border-color:var(--red);color:var(--red)}
+.err-box{background:#3a1a1a;border:1px solid #6b2020;border-radius:8px;
+  padding:10px 12px;font-size:12px;color:var(--red);display:none}
+.main{display:flex;flex-direction:column;overflow:hidden}
+.log-hdr{padding:12px 18px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px}
+.log-hdr h2{font-size:14px;font-weight:600}
+.log-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.btn-sm{padding:4px 10px;border-radius:6px;border:1px solid var(--border);
+  background:transparent;color:var(--dim);font-size:12px;cursor:pointer}
+.btn-sm:hover{color:var(--text)}
+#log{flex:1;overflow-y:auto;padding:10px 18px;
+  font-family:var(--mono);font-size:12.5px;line-height:1.7}
+.ll{display:flex;gap:10px;padding:1px 0}
+.lt{color:var(--dim);flex-shrink:0}
+.lv{flex-shrink:0;width:54px;text-align:right;font-weight:600}
+.lv.Info{color:var(--blue)}.lv.Warning{color:var(--amber)}
+.lv.Error{color:var(--red)}.lv.Debug{color:var(--dim)}
+.lm{color:var(--text)}
+.tts-banner{background:#1a1a2e;border-left:3px solid var(--purple);
+  padding:8px 12px;border-radius:0 6px 6px 0;margin:4px 0;font-size:12.5px}
+.tts-cmd{color:var(--purple);font-family:var(--mono);font-weight:700;margin-right:4px}
+.tts-sender{color:var(--blue);font-weight:600}
+.tts-text{color:var(--dim);margin-top:2px}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🔊</div>
+  <h1>Толк TTS Бот</h1>
+  <span id="conn">● Подключение...</span>
+</header>
+<div class="layout">
+  <div class="sidebar">
+    <div class="card">
+      <div class="card-title">Статус</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <div class="badge stopped" id="badge">
+          <div class="dot" id="dot"></div>
+          <span id="status-txt">Остановлен</span>
+        </div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="metric-label">Озвучено</div><div class="metric-value" id="m-spoken">0</div></div>
+        <div class="metric"><div class="metric-label">/tts команд</div><div class="metric-value" id="m-tts">0</div></div>
+        <div class="metric"><div class="metric-label">В очереди</div><div class="metric-value" id="m-queue">0</div></div>
+        <div class="metric"><div class="metric-label">Аптайм</div><div class="metric-value" id="m-uptime">—</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Команда</div>
+      <div style="margin-bottom:8px">
+        <span class="cmd-badge" id="cmd">/tts</span>
+        <span style="font-size:12px;color:var(--dim);margin-left:8px">триггер</span>
+      </div>
+      <div style="font-size:12px;color:var(--dim);line-height:1.6">
+        Пример: <span style="color:var(--text);font-family:var(--mono)">/tts Привет!</span><br>
+        Озвучит: <em style="color:var(--green)">Имя сказал: Привет!</em>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Комната</div>
+      <input type="url" id="room-url" placeholder="https://kontur.ktalk.ru/...">
+      <button class="btn btn-start" id="btn-start" onclick="startBot()">▶ Запустить</button>
+      <button class="btn btn-stop"  id="btn-stop"  onclick="stopBot()" disabled>■ Остановить</button>
+      <div style="font-size:11px;color:var(--dim);margin-top:6px" id="room-info"></div>
+    </div>
+    <div class="err-box" id="err"></div>
+    <div class="card" id="last-card" style="display:none">
+      <div class="card-title">Последнее озвучивание</div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:4px">
+        от <span style="color:var(--blue)" id="last-sender"></span>
+      </div>
+      <div style="font-size:13px" id="last-text"></div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="log-hdr">
+      <h2>Лог событий</h2>
+      <div class="log-actions">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--dim);cursor:pointer">
+          <input type="checkbox" id="auto" checked> Автоскролл
+        </label>
+        <button class="btn-sm" onclick="clearLog()">Очистить</button>
+      </div>
+    </div>
+    <div id="log"></div>
+  </div>
+</div>
+<script>
+const hub = new signalR.HubConnectionBuilder()
+  .withUrl('/hub')
+  .withAutomaticReconnect([1000,2000,5000,10000])
+  .configureLogging(signalR.LogLevel.Warning)
+  .build();
+
+hub.on('StatusUpdated',      updateStatus);
+hub.on('LogReceived',        addLog);
+hub.on('TtsCommandReceived', (sender,text) => addTtsBanner(sender,text));
+hub.onreconnecting(() => setConn('Реконнект...','#f5a623'));
+hub.onreconnected(()  => { setConn('Подключён','#3ecf6a'); fetchStatus(); });
+hub.onclose(()        => setConn('Отключён','#f04444'));
+
+(async function connect(){
+  try { await hub.start(); setConn('Подключён','#3ecf6a'); fetchStatus(); }
+  catch { setConn('Ошибка WS','#f04444'); setTimeout(connect,3000); }
+})();
+
+function updateStatus(s){
+  const map={
+    Stopped:      ['stopped',     'Остановлен',   false],
+    Connecting:   ['connecting',  'Подключение...', true],
+    Running:      ['running',     'Работает',       true],
+    Reconnecting: ['reconnecting','Реконнект...',   true],
+    Error:        ['error',       'Ошибка',         false],
+  };
+  const [cls,label,pulse]=map[s.status]||['stopped',s.status,false];
+  document.getElementById('badge').className=`badge ${cls}`;
+  document.getElementById('status-txt').textContent=label;
+  document.getElementById('dot').className=`dot${pulse?' pulse':''}`;
+  document.getElementById('m-spoken').textContent=s.messagesSpoken??0;
+  document.getElementById('m-tts').textContent=s.ttsCommandCount??0;
+  document.getElementById('m-queue').textContent=s.queueLength??0;
+  document.getElementById('m-uptime').textContent=
+    s.status==='Running'?fmt(+s.uptimeSeconds):'—';
+  if(s.ttsCommand) document.getElementById('cmd').textContent=s.ttsCommand;
+  const run=['Running','Connecting','Reconnecting'].includes(s.status);
+  document.getElementById('btn-start').disabled=run;
+  document.getElementById('btn-stop').disabled=!run;
+  document.getElementById('room-info').textContent=s.roomId?`ID: ${s.roomId}`:'';
+  const eb=document.getElementById('err');
+  if(s.errorMessage){eb.textContent=`⚠ ${s.errorMessage}`;eb.style.display='block';}
+  else eb.style.display='none';
+}
+function addLog(e){
+  const c=document.getElementById('log');
+  const d=document.createElement('div');
+  d.className='ll';
+  const t=new Date(e.timestamp).toLocaleTimeString('ru',{hour12:false});
+  d.innerHTML=`<span class="lt">${t}</span><span class="lv ${e.level}">${e.level.slice(0,4).toUpperCase()}</span><span class="lm">${esc(e.message)}</span>`;
+  c.appendChild(d);trim(c);scroll(c);
+}
+function addTtsBanner(sender,text){
+  const c=document.getElementById('log');
+  const d=document.createElement('div');
+  d.className='tts-banner';
+  d.innerHTML=`<div><span class="tts-cmd">/tts</span><span class="tts-sender">${esc(sender)}</span></div><div class="tts-text">${esc(text)}</div>`;
+  c.appendChild(d);trim(c);scroll(c);
+  document.getElementById('last-card').style.display='block';
+  document.getElementById('last-sender').textContent=sender;
+  document.getElementById('last-text').textContent=text;
+}
+function clearLog(){document.getElementById('log').innerHTML='';}
+async function startBot(){
+  const url=document.getElementById('room-url').value.trim();
+  if(!url){alert('Введите ссылку');return;}
+  try{
+    const r=await fetch('/api/bot/start',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({roomUrl:url})});
+    const d=await r.json();
+    if(!r.ok) addLog({level:'Error',message:d.error||'Ошибка',timestamp:new Date()});
+    else updateStatus(d);
+  }catch(e){addLog({level:'Error',message:e.message,timestamp:new Date()});}
+}
+async function stopBot(){
+  const r=await fetch('/api/bot/stop',{method:'POST'});
+  updateStatus(await r.json());
+}
+async function fetchStatus(){
+  try{
+    const d=await(await fetch('/api/bot/status')).json();
+    updateStatus(d);
+    if(d.roomUrl) document.getElementById('room-url').value=d.roomUrl;
+  }catch{}
+}
+function setConn(t,c){const e=document.getElementById('conn');e.textContent=`● ${t}`;e.style.color=c;}
+function fmt(s){if(s<60)return s+'с';if(s<3600)return Math.floor(s/60)+'м';return Math.floor(s/3600)+'ч '+Math.floor((s%3600)/60)+'м';}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function trim(c){while(c.children.length>600)c.removeChild(c.firstChild);}
+function scroll(c){if(document.getElementById('auto').checked)c.scrollTop=c.scrollHeight;}
+document.getElementById('room-url').addEventListener('keydown',e=>{if(e.key==='Enter')startBot();});
+setInterval(async()=>{
+  if(!document.getElementById('badge').classList.contains('running'))return;
+  try{const d=await(await fetch('/api/bot/status')).json();
+    document.getElementById('m-uptime').textContent=fmt(+d.uptimeSeconds);}catch{}
+},1000);
+</script>
+</body>
+</html>

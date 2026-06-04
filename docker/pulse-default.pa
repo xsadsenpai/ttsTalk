@@ -1,0 +1,8 @@
+.ifexists module-udev-detect.so
+load-module module-udev-detect
+.endif
+load-module module-null-sink sink_name=virtual_speaker sink_properties=device.description="Virtual_Speaker"
+load-module module-loopback source=virtual_speaker.monitor sink=virtual_speaker latency_msec=1
+set-default-sink virtual_speaker
+set-default-source virtual_speaker.monitor
+load-module module-native-protocol-unix
